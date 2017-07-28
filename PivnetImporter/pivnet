@@ -1,0 +1,191 @@
+#!/bin/bash
+
+PIVNETRC=~/.pivnetrc
+
+if [ -f "$PIVNETRC" ]; then
+  chmod 400 $PIVNETRC
+  source $PIVNETRC 2>/dev/null
+fi
+
+set -e
+
+usage_and_exit() {
+  cat <<EOF
+Usage: pivnet <command> [options]
+Examples:
+  pivnet token SAMPLEaJimQVTq2zWBYZ
+  pivnet download https://network.pivotal.io/.../product_files/7509/download
+EOF
+  exit 1
+}
+
+error_and_exit() {
+  echo "$1" && exit 1
+}
+
+set_token() {
+  [ -f "$PIVNETRC" ] && chmod 600 $PIVNETRC
+  echo "PIVNET_API_TOKEN=$1" > $HOME/.pivnetrc
+  chmod 400 $PIVNETRC
+  echo "Updated Pivotal Network API Token"
+}
+
+validate_sha256() {
+  local FILENAME=$1
+  local CHECKSUM=$2
+
+  # Ubuntu uses md5sum; OS X uses md5
+  local OUTPUT=$(shasum -a 256 $FILENAME)
+
+  [[ "$OUTPUT" =~ "$CHECKSUM" ]]
+}
+
+validate_md5() {
+  local FILENAME=$1
+  local CHECKSUM=$2
+
+  # Ubuntu uses md5sum; OS X uses md5
+  local MD5SUM=$(command -v md5sum 2>/dev/null || command -v md5 2>/dev/null)
+  local OUTPUT=$($MD5SUM $FILENAME)
+
+  [[ "$OUTPUT" =~ "$CHECKSUM" ]]
+}
+
+# return the product file json
+get_product_file() {
+  local PIVNET_API_TOKEN=$PIVNET_API_TOKEN
+  local DOWNLOAD_URL=$1
+
+  # https://network.pivotal.io/api/v2/products/:slug/releases/:id/product_files/:id/download
+  local PIVNET_HOST=${DOWNLOAD_URL%/api/v2*}
+  local PRODUCT_SLUG=${DOWNLOAD_URL#*/products/*} && PRODUCT_SLUG=${PRODUCT_SLUG%*/releases/*}
+  local RELEASE_ID=${DOWNLOAD_URL#*/releases/*} && RELEASE_ID=${RELEASE_ID%*/product_files/*}
+  local FILE_ID=${DOWNLOAD_URL#*/product_files/*} && FILE_ID=${FILE_ID%*/download*}
+
+  curl -s -H "Authorization: Token $PIVNET_API_TOKEN" $PIVNET_HOST/api/v2/products/$PRODUCT_SLUG/releases/$RELEASE_ID/product_files/$FILE_ID
+}
+
+# get the filename from the product file json
+get_filename() {
+  local PIVNET_API_TOKEN=$PIVNET_API_TOKEN
+  local PRODUCT_FILE=$1
+
+  local AWS_OBJECT_KEY_VALUE=$(echo "$PRODUCT_FILE" | grep -oE '"aws_object_key":\s{0,}"[^"]*' | grep -o '[^"]*$')
+  basename "$AWS_OBJECT_KEY_VALUE"
+}
+
+# get the sha256 from the product file json
+get_sha256() {
+  local PIVNET_API_TOKEN=$PIVNET_API_TOKEN
+  local PRODUCT_FILE=$1
+
+  echo "$PRODUCT_FILE" | grep -oE '"sha256":\s{0,}"[^"]*' | grep -o '[^"]*$'
+}
+
+# get the sha256 from the product file json
+get_md5() {
+  local PIVNET_API_TOKEN=$PIVNET_API_TOKEN
+  local PRODUCT_FILE=$1
+
+  echo "$PRODUCT_FILE" | grep -oE '"md5":\s{0,}"[^"]*' | grep -o '[^"]*$'
+}
+
+download_from_pivnet() {
+  local PIVNET_API_TOKEN=$PIVNET_API_TOKEN
+  if [ -z "$PIVNET_API_TOKEN" ]; then
+    read -r -p "Pivnet API Token: " PIVNET_API_TOKEN
+
+    local SAVE_TOKEN=
+    read -r -p "Save token for future use? [Y/n]: " SAVE_TOKEN
+
+    SAVE_TOKEN=$(echo "${SAVE_TOKEN:-y}" | awk '{print tolower($0)}')
+
+    if [ "$SAVE_TOKEN" = "y" ]; then
+      set_token $PIVNET_API_TOKEN
+    fi
+  fi
+
+  local DOWNLOAD_URL=$1
+  if [ -z "$DOWNLOAD_URL" ]; then
+    read -r -p "Remote file URL: " DOWNLOAD_URL
+  fi
+
+  # Hit the download URL but don't follow the redirect just yet so we can validate
+  # the response codes and get the filename
+  local OUTPUT=$(curl -s --data '' -D- -o /dev/null -H "Authorization: Token $PIVNET_API_TOKEN" $DOWNLOAD_URL)
+
+  if echo "$OUTPUT" | grep -q 'HTTP/1.1 401'; then
+    error_and_exit "User could not be authenticated. Invalid token: $PIVNET_API_TOKEN"
+  elif echo "$OUTPUT" | grep -q 'HTTP/1.1 403'; then
+    error_and_exit "User does not have access to download files from this release."
+  elif echo "$OUTPUT" | grep -q 'HTTP/1.1 404'; then
+    error_and_exit "The product or release cannot be found. Invalid Download URL: $DOWNLOAD_URL"
+  elif echo "$OUTPUT" | grep -q 'HTTP/1.1 451'; then
+
+    echo "User has not accepted the current EULA for this release."
+    local ACCEPT_EULA=
+    read -r -p "Accept End User License Agreement? [Y/n]: " ACCEPT_EULA
+    ACCEPT_EULA=$(echo "${ACCEPT_EULA:-y}" | awk '{print tolower($0)}')
+
+    if [ "$ACCEPT_EULA" != "y" ]; then
+      error_and_exit "You must agree to the End User License Agreement terms and conditions in order to download software."
+    fi
+
+    local BASE_URL=${DOWNLOAD_URL%/product_files*}
+
+    local ACCEPT_EULA_RESPONSE_CODE=$(curl -s -w "%{http_code}" -o /dev/null --data '' -H "Authorization: Token $PIVNET_API_TOKEN" $BASE_URL/eula_acceptance)
+
+    if [ "$ACCEPT_EULA_RESPONSE_CODE" != "200" ]; then
+      error_and_exit "Failed to accept End User License Agreement. Please visit the product page on network.pivotal.io and accept the EULA."
+    fi
+
+    echo "Accepted End User License Agreement. Visit https://network.pivotal.io/users/dashboard/eulas to view all accepted EULAs"
+
+    # Hit the download url again now that we've accepted the EULA
+    OUTPUT=$(curl -s --data '' -D- -o /dev/null -H "Authorization: Token $PIVNET_API_TOKEN" $DOWNLOAD_URL)
+  fi
+
+  local PRODUCT_FILE=$(get_product_file "$DOWNLOAD_URL")
+  local FILENAME=$(get_filename "$PRODUCT_FILE")
+  local SHA256=$(get_sha256 "$PRODUCT_FILE")
+  local MD5=$(get_md5 "$PRODUCT_FILE")
+
+  if [ -z "$FILENAME" ]; then
+    error_and_exit "Unable to get the filename from the download url."
+  fi
+
+  echo "Downloading $FILENAME from $DOWNLOAD_URL"
+
+  curl -o $FILENAME \
+    -L --data '' \
+    -H "Authorization: Token $PIVNET_API_TOKEN" \
+    $DOWNLOAD_URL
+
+  if [ -n "$SHA256" ]; then
+    echo "Validating sha256 checksum: $SHA256"
+    if ! validate_sha256 $FILENAME $SHA256; then
+      error_and_exit "Checksum is invalid! Please re-download the product."
+    else
+      echo "Checksum is valid."
+    fi
+  elif [ -n "$MD5" ]; then
+    echo "Validating md5 checksum: $MD5"
+    if ! validate_md5 $FILENAME $MD5; then
+      error_and_exit "Checksum is invalid! Please re-download the product."
+    else
+      echo "Checksum is valid."
+    fi
+  else
+    error_and_exit "No SHA256 or MD5 checksum found in product file: $PRODUCT_FILE"
+  fi
+}
+
+CMD=$1 ARG=$2
+
+if [ "token" = "$CMD" ]; then
+  set_token $ARG
+elif [ "download" = "$CMD" ]; then
+  download_from_pivnet $ARG
+else
+  usage_and_exit
+fi
