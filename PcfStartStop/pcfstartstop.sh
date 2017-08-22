@@ -28,7 +28,7 @@ source ~/.profile
         bosh -n -N delete vm $jobVMID
     done
     echo "Kill VM tasks scheduled, execing 'watch bosh tasks --no-filter' to track progress"
-    watch bosh tasks --no-filter
+    watch -n 10 'BUNDLE_GEMFILE=/home/tempest-web/tempest/web/vendor/bosh/Gemfile bundle exec bosh tasks --no-filter' 
  }
  
  if [ $1 == "shutall" ]; then
@@ -43,18 +43,20 @@ source ~/.profile
  
  
  if [ $1 == "start" ]; then
-  bosh vm resurrection on
-  declare -a boshdeployments=()
-  deployments=$(bosh deployments | awk -F '|' '{gsub(/ /, "", $0); print $2}')
-  for x in $deployments; do
-   if [ -n $x ]; then
-    if [ "$x" != "Name" ]; then
-     boshdeployments+=($x)
-    fi
-   fi
-  done
-  for x in ${boshdeployments[@]}; do
-   echo "Deploying BOSH Deployment $x"
-   bosh -n -d /var/tempest/workspaces/default/deployments/$x.yml deploy
-  done
+  #bosh -n deploy
+  #bosh vm resurrection on
+
+	declare -a boshdeployments=()
+	deployments=$(bosh deployments | awk -F '|' '{gsub(/ /, "", $0); print $2}')
+	for x in $deployments; do
+        	if [ -n $x ]; then
+                	if [ "$x" != "Name" ]; then
+                        	boshdeployments+=($x)
+                	fi
+        	fi
+	done
+	for x in ${boshdeployments[@]}; do
+        	echo "BOSH Instancs for Deployment $x"
+        	bosh -n -d /var/tempest/workspaces/default/deployments/$x.yml deploy
+	done
  fi
