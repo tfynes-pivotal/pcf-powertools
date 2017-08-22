@@ -5,7 +5,7 @@
 # Pre-req add the 'jq' executable to the host and present on path (sudo apt-get update && sudo apt-get install jq)
 #
 # Now works when run as root - so it can be fitted into a crontab entry for automated scaling!
-# 49 1 * * * sudo  /home/ubuntu/cellscaler.sh #Cells >/tmp/scaler.log 2>&1
+# 49 1 * * * sudo  /home/ubuntu/cellscaler.sh #Cells >/tmp/cellscaler.log 2>&1
 
 if [ "$#" -ne 1 ]; then
     echo "Usage: cellscaler.sh <Desired # of DiegoCells> >/tmp/cellscaler.log 2>&1"
@@ -36,6 +36,9 @@ export diego_cell_resource_config=`curl -s -k -H "Authorization: Bearer $access_
 # UPDATE DIEGO CELL RESOURCE CONFIG
 export new_diego_cell_resource_config=`echo $diego_cell_resource_config | jq -r ".instances = $NEW_CELL_COUNT"`
 curl -s -k -X PUT -H "Content-Type: application/json" -H "Authorization: Bearer $access_token" https://$OPSMGRHOST/api/v0/staged/products/$cfguid/jobs/$diego_cell_guid/resource_config -d "$new_diego_cell_resource_config"
+
+# OpsMgr rate limit paranoia
+sleep(5) 
 
 # APPLYING CHANGES
 echo "UPDATING TO $NEW_CELL_COUNT DIEGO CELLS IN FOUNDATION"
