@@ -57,6 +57,9 @@ source ~/.profile
 	done
 	for x in ${boshdeployments[@]}; do
         	echo "BOSH Instancs for Deployment $x"
-        	bosh -n -d /var/tempest/workspaces/default/deployments/$x.yml deploy
+	 	rm -f /tmp/$x.yml	
+		bosh download manifest $x /tmp/$x.yml
+        	bosh -n -d /tmp/$x.yml deploy &
 	done
+	watch -n 10 'BUNDLE_GEMFILE=/home/tempest-web/tempest/web/vendor/bosh/Gemfile bundle exec bosh tasks --no-filter'
  fi
