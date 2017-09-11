@@ -59,6 +59,14 @@ source ~/.profile
         	echo "BOSH Instancs for Deployment $x"
 	 	rm -f /tmp/$x.yml	
 		bosh download manifest $x /tmp/$x.yml
+                uuid=$(bosh status --uuid)
+                directoruuid="director_uuid: $uuid"
+                if grep -q 'director_uuid' /tmp/$x.yml
+                then
+                  :
+                else
+                  sed -i "3i$directoruuid" /tmp/$x.yml
+                fi
         	bosh -n -d /tmp/$x.yml deploy &
 	done
 	watch -n 10 'BUNDLE_GEMFILE=/home/tempest-web/tempest/web/vendor/bosh/Gemfile bundle exec bosh tasks --no-filter'
