@@ -15,25 +15,16 @@ source ~/.profile
                  exit 1
  fi
 
- deleteVMs() {
-  bosh vm resurrection off
-   for x in $jobVMs; do
-      jobId=$(echo $x | awk -F "/" '{ print $1 }')
-      instanceId=$(echo $x | awk -F "/" '{ print $2 }'| awk -F '(' '{ print $1 }')
-      if [ -z $instanceId ]; then
-        continue
-      fi
-      jobVMID=$(echo $x | awk -F ',' '{ print $2 }')
-        echo Killing: $jobId
-        bosh -n -N delete vm $jobVMID
-    done
-    echo "Kill VM tasks scheduled, execing 'watch bosh tasks --no-filter' to track progress"
-    watch -n 10 'BUNDLE_GEMFILE=/home/tempest-web/tempest/web/vendor/bosh/Gemfile bundle exec bosh tasks --no-filter'
- }
-
  if [ $1 == "shutall" ]; then
-  jobVMs=$(bosh vms --details| awk -F '|' '{gsub(/ /, "", $0); print $2","$7 }')
-  deleteVMs
+  deployments=$(bosh2 -e pcf deployments --column=Name)
+  #jobVMs=$(bosh2 -e pcf vms --column="VM CID" --json | jq --raw-output .Tables[].Rows[].vm_cid)
+  for thisDeployment in $deployments; do
+    jobVMs=$(bosh2 -e pcf -d $thisDeployment vms --column="VM CID")
+    for thisVM in $jobVMs; do
+      echo "DELETING $thisDeployment : $thisVM"
+      bosh2 -e pcf -n -d $thisDeployment delete-vm $thisVM &
+    done
+  done
  fi
 
  if [ $1 == "shut" ]; then
@@ -46,18 +37,18 @@ source ~/.profile
   #bosh -n deploy
   #bosh vm resurrection on
 
-	declare -a boshdeployments=()
-	deployments=$(bosh2 -e pcf deployments --column=Name)
-	for x in $deployments; do
-        	if [ -n $x ]; then
+        declare -a boshdeployments=()
+        deployments=$(bosh2 -e pcf deployments --column=Name)
+        for x in $deployments; do
+                if [ -n $x ]; then
                         boshdeployments+=($x)
-        	fi
-	done
-	for x in ${boshdeployments[@]}; do
-        	echo "BOSH Instancs for Deployment $x"
-	 	rm -f /tmp/$x.yml
-		bosh2 -e pcf -d $x manifest > /tmp/$x.yml
-        	bosh2 -e pcf -n -d $x deploy /tmp/$x.yml
-	done
-	watch -n 10 'BUNDLE_GEMFILE=/home/tempest-web/tempest/web/vendor/bosh/Gemfile bundle exec bosh tasks --no-filter'
+                fi
+        done
+        for x in ${boshdeployments[@]}; do
+                echo "BOSH Instancs for Deployment $x"
+                rm -f /tmp/$x.yml
+                bosh2 -e pcf -d $x manifest > /tmp/$x.yml
+                bosh2 -e pcf -n -d $x deploy /tmp/$x.yml
+        done
+        watch -n 10 'BUNDLE_GEMFILE=/home/tempest-web/tempest/web/vendor/bosh/Gemfile bundle exec bosh tasks --no-filter'
  fi
