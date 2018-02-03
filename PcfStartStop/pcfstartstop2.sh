@@ -38,17 +38,10 @@ source ~/.profile
   #bosh vm resurrection on
 
         declare -a boshdeployments=()
-        deployments=$(bosh2 -e pcf deployments --column=Name)
-        for x in $deployments; do
-                if [ -n $x ]; then
-                        boshdeployments+=($x)
-                fi
+        deployments=$(bosh2 -e pcf deployments --json | jq --raw-output .Tables[].Rows[].name)
+        for thisDeployment in $deployments; do
+          bosh2 -e pcf -d $thisDeployment manifest > /tmp/$thisDeployment.yml
+          bosh2 -e pcf -d $thisDeployment -n deploy /tmp/$thisDeployment.yml &
         done
-        for x in ${boshdeployments[@]}; do
-                echo "BOSH Instancs for Deployment $x"
-                rm -f /tmp/$x.yml
-                bosh2 -e pcf -d $x manifest > /tmp/$x.yml
-                bosh2 -e pcf -n -d $x deploy /tmp/$x.yml
-        done
-        watch -n 10 'BUNDLE_GEMFILE=/home/tempest-web/tempest/web/vendor/bosh/Gemfile bundle exec bosh tasks --no-filter'
+        watch -n 10 'bosh -e pcf tasks'
  fi
