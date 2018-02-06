@@ -37,11 +37,11 @@ source ~/.profile
   #bosh -n deploy
   #bosh vm resurrection on
 
-        declare -a boshdeployments=()
-        deployments=$(bosh2 -e pcf deployments --json | jq --raw-output .Tables[].Rows[].name)
-        for thisDeployment in $deployments; do
+	declare -a boshdeployments=()
+	deployments=$(bosh2 -e pcf deployments --json | jq --raw-output .Tables[].Rows[].name)
+	for thisDeployment in $deployments; do
           bosh2 -e pcf -d $thisDeployment manifest > /tmp/$thisDeployment.yml
           bosh2 -e pcf -d $thisDeployment -n deploy /tmp/$thisDeployment.yml &
-        done
-        watch -n 10 'bosh -e pcf tasks'
+	done
+	watch -n 10 'bosh -e pcf tasks --no-filter'
  fi
