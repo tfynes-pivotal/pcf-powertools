@@ -16,13 +16,13 @@ source ~/.profile
  fi
 
  if [ $1 == "shutall" ]; then
-  deployments=$(bosh -e pcf deployments --column=Name)
-  #jobVMs=$(bosh -e pcf vms --column="VM CID" --json | jq --raw-output .Tables[].Rows[].vm_cid)
+  deployments=$(bosh deployments --column=Name)
+  #jobVMs=$(bosh vms --column="VM CID" --json | jq --raw-output .Tables[].Rows[].vm_cid)
   for thisDeployment in $deployments; do
-    jobVMs=$(bosh -e pcf -d $thisDeployment vms --column="VM CID")
+    jobVMs=$(bosh -d $thisDeployment vms --column="VM CID")
     for thisVM in $jobVMs; do
       echo "DELETING $thisDeployment : $thisVM"
-      bosh -e pcf -n -d $thisDeployment delete-vm $thisVM &
+      bosh -n -d $thisDeployment delete-vm $thisVM &
     done
   done
  fi
@@ -38,10 +38,17 @@ source ~/.profile
   #bosh vm resurrection on
 
 	declare -a boshdeployments=()
-	deployments=$(bosh -e pcf deployments --json | jq --raw-output .Tables[].Rows[].name)
+	deployments=$(bosh deployments --json | jq --raw-output .Tables[].Rows[].name)
 	for thisDeployment in $deployments; do
-          bosh -e pcf -d $thisDeployment manifest > /tmp/$thisDeployment.yml
-          bosh -e pcf -d $thisDeployment -n deploy /tmp/$thisDeployment.yml &
+          if [[ $thisDeployment == "cf-"* ]]; then
+             bosh -d $thisDeployment manifest > /tmp/$thisDeployment.yml
+             bosh  -d $thisDeployment -n deploy /tmp/$thisDeployment.yml &
+          fi
+        done 
+        sleep 10m
+	for thisDeployment in $deployments; do
+          bosh -d $thisDeployment manifest > /tmp/$thisDeployment.yml
+          bosh -d $thisDeployment -n deploy /tmp/$thisDeployment.yml &
 	done
-	watch -n 10 'bosh -e pcf tasks --no-filter'
+	watch -n 10 'bosh tasks --no-filter'
  fi
