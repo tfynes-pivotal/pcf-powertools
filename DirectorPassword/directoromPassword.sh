@@ -20,6 +20,9 @@ else
   echo Found BOSH ENVs in bashrc - not changing
 fi
 
+echo "BOSH_CLIENT=ops_manager BOSH_CLIENT_SECRET=$ompw BOSH_CA_CERT=/var/tempest/workspaces/default/root_ca_certificate BOSH_ENVIRONMENT=$bip bosh \$*" > /home/ubuntu/execbosh.sh
+chmod +x /home/ubuntu/execbosh.sh
+
 if [[ $(grep -L "bashrc" ~/.profile) ]]; then
   sudo chmod go+w ~/.profile
   echo "source ~/.bashrc" >> ~/.profile
