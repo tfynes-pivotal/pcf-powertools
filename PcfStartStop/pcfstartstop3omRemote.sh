@@ -19,10 +19,11 @@ source ~/.profile
   deployments=$(/home/ubuntu/execbosh.sh deployments --column=Name)
   #jobVMs=$(/home/ubuntu/execbosh.sh vms --column="VM CID" --json | jq --raw-output .Tables[].Rows[].vm_cid)
   for thisDeployment in $deployments; do
-    jobVMs=$(/home/ubuntu/execbosh.sh -d $thisDeployment vms --column="VM CID")
+    jobVMs=$(/home/ubuntu/execbosh.sh -d $thisDeployment vms --json | jq --raw-output .Tables[].Rows[].vm_cid)
+    #jobVMs=$(/home/ubuntu/execbosh.sh -d $thisDeployment vms --column="VM CID")
     for thisVM in $jobVMs; do
       echo "DELETING $thisDeployment : $thisVM"
-      /home/ubuntu/execbosh.sh -n -d $thisDeployment delete-vm $thisVM &
+      $(/home/ubuntu/execbosh.sh -n -d $thisDeployment delete-vm $thisVM) &
     done
   done
  fi
